@@ -310,4 +310,5 @@ public class MotionInputManager : MonoBehaviour
     {
         return this.isMotionInputStarted;
     }
+
 }
