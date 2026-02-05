@@ -51,10 +51,37 @@ public class MotionInputManager : MonoBehaviour
     private IntPtr motionInputHWnd = IntPtr.Zero;
     private IntPtr unityWindowHandle;
     private bool isMotionInputStarted = false;
+    private string configPath;
 
     // Start is called before the first frame update
     void Start()
     {
+        // First we need to set up the config folder and move it over into persistentDataPath
+        // persistentDataPath maps to AppData on Windows
+        // can read and write to it
+        // rest of MI will be stored in Application.streamingAssetsPath
+        // because its read only
+
+        // everything in Application.streamingAssetsPath at the start
+        string readonly_configPath = Path.Combine(Application.streamingAssetsPath, folder, configFile);
+
+        // copy over config.json to Application.persistentDataPath
+        string configFolder = Path.Combine(Application.persistentDataPath, folder, "data");
+
+        if (!Directory.Exists(configFolder))
+        {
+            Directory.CreateDirectory(configFolder);
+        }
+
+        // only read from that from now on
+        configPath = Path.Combine(configFolder, "config.json");
+
+        if (!File.Exists(configPath))
+        {
+            File.Copy(readonly_configPath, configPath);
+        }
+
+
         Application.runInBackground = true;
         this.gameObject.SetActive(false);
         this.unityWindowHandle = GetForegroundWindow();
@@ -97,12 +124,17 @@ public class MotionInputManager : MonoBehaviour
         TerminateMotionInput();
         // Start Motion Input Window using powershell
         string appPath = Path.Combine(Application.streamingAssetsPath, folder);
+        string processArgs = $"--config \\\"{configPath}\\\"";
+
+        // 2. Wrap the executable name in single quotes.
+        string quotedApp = $"'{app}'";
+        string psCommand = $"& {{ cd '{appPath}'; Start-Process {quotedApp} -ArgumentList @('{processArgs}') }}";
         ProcessStartInfo startInfo = new ProcessStartInfo
         {
             FileName = "powershell.exe",
-            Arguments = "-NoProfile -WindowStyle Hidden -Command \"& { " +
-                        @"cd " + "'" + appPath + "'" + "; " +
-                        @" Start-Process " + "'" + app + "'" + " }\"",
+            Arguments = $"-NoProfile -WindowStyle Hidden -Command \"{psCommand}\"",
+
+            // string : cd "<appPath>"; Start-Process "<app>" -ArgumentList "--config `"<path>`""
             UseShellExecute = false,
             CreateNoWindow = true,
         };
@@ -218,15 +250,14 @@ public class MotionInputManager : MonoBehaviour
             return false;
         }
 
-        // Write to config.json
-        string path = Path.Combine(Application.streamingAssetsPath, folder, configFile);
-        string[] jsonString = File.ReadAllLines(path);
+        // Write to config.json in persistantDataPath
+        string[] jsonString = File.ReadAllLines(configPath);
 
         string newModeString = $"\"mode\": \"{this.mode}\",";
 
         jsonString[1] = newModeString;
 
-        File.WriteAllLines(path, jsonString);
+        File.WriteAllLines(configPath, jsonString);
         return true;
     }
 
@@ -237,8 +268,7 @@ public class MotionInputManager : MonoBehaviour
     private string GetCurrentMode()
     {
         // Read from config.json
-        string path = Path.Combine(Application.streamingAssetsPath, folder, configFile);
-        string[] jsonString = File.ReadAllLines(path);
+        string[] jsonString = File.ReadAllLines(configPath);
         string modeValue = jsonString[1].Split(":")[1];
 
         return modeValue.Trim().Substring(1, modeValue.Length - 4);
